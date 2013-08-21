@@ -18,7 +18,7 @@ PPU::PPU(uint8_t* vrom)
     m_ram = new uint8_t[0x4000];
     memcpy(m_ram, vrom, 8 * 1024);
 
-    m_screen = SDL_SetVideoMode(256, 240, 32, SDL_SWSURFACE);
+    //m_screen = SDL_SetVideoMode(256, 240, 32, SDL_SWSURFACE);
 }
 
 // =====================================================================================================================
@@ -140,15 +140,15 @@ void PPU::renderVideo()
 
 		    uint8_t paletteData = m_ram[0x3f00 + paletteIndex];
 
-		    Uint8* p = (Uint8*)m_screen->pixels + (row * 8 + tileRow) * m_screen->pitch + (col * 8 + tileCol) * 4;
-		    uint32_t* pixel = (uint32_t*)p;
-		    *pixel = palette[paletteData];
+		    //Uint8* p = (Uint8*)m_screen->pixels + (row * 8 + tileRow) * m_screen->pitch + (col * 8 + tileCol) * 4;
+		    //uint32_t* pixel = (uint32_t*)p;
+		    //*pixel = palette[paletteData];
 		}
 	    }
 	}
     }
 
-    SDL_Flip(m_screen);
+    //SDL_Flip(m_screen);
 }
 
 // =====================================================================================================================

@@ -8,6 +8,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <iostream>
+#include <iomanip>
 
 // =====================================================================================================================
 struct NesHeader
@@ -103,8 +104,8 @@ class TestMemory : public lib6502::Memory
 class CpuTracer : public lib6502::InstructionTracer
 {
     public:
-	void trace(const std::string& inst) override
-	{ std::cerr << "CPU: " << inst << std::endl; }
+	void trace(uint16_t PC, const std::string& inst) override
+	{ std::cerr << "CPU [PC="<< std::hex << std::setw(4) << std::setfill('0') << PC << "]: " << inst << std::endl; }
 };
 
 // =====================================================================================================================
@@ -137,7 +138,7 @@ int main(int argc, char** argv)
     if (argc != 2)
 	return 1;
 
-    SDL_Init(SDL_INIT_EVERYTHING);
+    //SDL_Init(SDL_INIT_EVERYTHING);
 
     uint8_t* rom;
     uint8_t* vrom;
@@ -179,8 +180,8 @@ int main(int argc, char** argv)
     ppu.dumpNameTables();
     ppu.renderVideo();
 
-    SDL_Delay(5000);
-    SDL_Quit();
+    //SDL_Delay(5000);
+    //SDL_Quit();
 
     return 0;
 }
