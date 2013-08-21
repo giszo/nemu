@@ -169,7 +169,7 @@ int main(int argc, char** argv)
 	}
 
 	// perform an NMI
-	for (int i = 0; i < 0x1a; ++i)
+	for (int i = 0; i < 100; ++i)
 	{
 	    std::cout << "Simulating NMI #" << i << std::endl;
 	    cpu.nmi();
