@@ -100,13 +100,22 @@ class TestMemory : public lib6502::Memory
 	PPU& m_ppu;
 };
 
+static uint64_t s_tick = 0;
+
 // =====================================================================================================================
 class CpuTracer : public lib6502::InstructionTracer
 {
     public:
 	void trace(const lib6502::Cpu::State& state, const std::string& inst) override
 	{
-	    std::cerr << "CPU [PC="<< std::hex << std::setw(4) << std::setfill('0') << state.m_PC << "]: " << inst << std::endl;
+	    std::cerr << std::hex;
+	    std::cerr << "t=" << std::setw(8) << std::setfill('0') << s_tick << " ";
+	    std::cerr << "CPU [";
+	    std::cerr << "PC=" << std::setw(4) << std::setfill('0') << state.m_PC << " ";
+	    std::cerr << "int=" << (state.m_inInterrupt ? "Y" : "N");
+	    std::cerr << "] ";
+	    std::cerr << inst;
+	    std::cerr << std::endl;
 	}
 };
 
@@ -140,7 +149,7 @@ int main(int argc, char** argv)
     if (argc != 2)
 	return 1;
 
-    //SDL_Init(SDL_INIT_EVERYTHING);
+    SDL_Init(SDL_INIT_EVERYTHING);
 
     uint8_t* rom;
     uint8_t* vrom;
@@ -149,20 +158,26 @@ int main(int argc, char** argv)
     PPU ppu(vrom);
     TestMemory m(rom, ppu);
     lib6502::Cpu cpu(m);
-    cpu.setInstructionTracer(new CpuTracer());
+    //cpu.setInstructionTracer(new CpuTracer());
 
     try
     {
-	for (int i = 0; i < 500000; ++i)
+	for (int i = 0; i < 30000; ++i)
+	{
 	    cpu.tick();
+	    ++s_tick;
+	}
 
 	// perform an NMI
-	for (int i = 0; i < 30; ++i)
+	for (int i = 0; i < 0x1a; ++i)
 	{
-	    std::cout << "Simulating NMI" << std::endl;
+	    std::cout << "Simulating NMI #" << i << std::endl;
 	    cpu.nmi();
 	    while (cpu.isInInterrupt())
+	    {
 		cpu.tick();
+		++s_tick;
+	    }
 	}
     }
     catch (const PPUException& e)
@@ -182,8 +197,19 @@ int main(int argc, char** argv)
     ppu.dumpNameTables();
     ppu.renderVideo();
 
-    //SDL_Delay(5000);
-    //SDL_Quit();
+    bool running = true;
+    SDL_Event event;
+
+    while (running)
+    {
+	while (SDL_PollEvent(&event))
+	{
+	    if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE)
+		running = false;
+	}
+    }
+
+    SDL_Quit();
 
     return 0;
 }
