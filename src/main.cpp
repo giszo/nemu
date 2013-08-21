@@ -104,8 +104,10 @@ class TestMemory : public lib6502::Memory
 class CpuTracer : public lib6502::InstructionTracer
 {
     public:
-	void trace(uint16_t PC, const std::string& inst) override
-	{ std::cerr << "CPU [PC="<< std::hex << std::setw(4) << std::setfill('0') << PC << "]: " << inst << std::endl; }
+	void trace(const lib6502::Cpu::State& state, const std::string& inst) override
+	{
+	    std::cerr << "CPU [PC="<< std::hex << std::setw(4) << std::setfill('0') << state.m_PC << "]: " << inst << std::endl;
+	}
 };
 
 // =====================================================================================================================
