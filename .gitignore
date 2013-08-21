@@ -1,0 +1,5 @@
+*.o
+
+/games
+/nemu
+/.sconsign.dblite
