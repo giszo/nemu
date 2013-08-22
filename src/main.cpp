@@ -112,6 +112,11 @@ class CpuTracer : public lib6502::InstructionTracer
 	    std::cerr << "t=" << std::setw(8) << std::setfill('0') << s_tick << " ";
 	    std::cerr << "CPU [";
 	    std::cerr << "PC=" << std::setw(4) << std::setfill('0') << state.m_PC << " ";
+	    std::cerr << "A=" << std::setw(2) << std::setfill('0') << (int)state.m_A << " ";
+	    std::cerr << "X=" << std::setw(2) << std::setfill('0') << (int)state.m_X << " ";
+	    std::cerr << "Y=" << std::setw(2) << std::setfill('0') << (int)state.m_Y << " ";
+	    std::cerr << "S=" << std::setw(2) << std::setfill('0') << (int)state.m_status << " ";
+	    std::cerr << "SP=" << std::setw(2) << std::setfill('0') << (int)state.m_SP << " ";
 	    std::cerr << "int=" << (state.m_inInterrupt ? "Y" : "N");
 	    std::cerr << "] ";
 	    std::cerr << inst;
