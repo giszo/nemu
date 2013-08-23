@@ -56,7 +56,7 @@ class TestMemory : public lib6502::Memory
 	    if (address >= 0x2000 && address <= 0x2007)
 		return m_ppu.read(address);
 
-	    if (address == 0x4016 || address == 0x4017)
+	    if (address == 0x4015 || address == 0x4016 || address == 0x4017)
 		return 0; // ???
 
 	    std::cerr << "Invalid memory read at address: " << std::hex << address << std::endl;
@@ -86,7 +86,7 @@ class TestMemory : public lib6502::Memory
 		return;
 	    }
 
-	    if (address == 0x4014 || address == 0x4016 /*???*/)
+	    if (address == 0x4014 || address == 0x4016 /*???*/ || address == 0x4017 /* extra WTF?! */)
 		return; // some DMA stuff
 
 	    std::cerr << "Invalid memory write at address: " << std::hex << address << std::endl;
@@ -167,7 +167,7 @@ int main(int argc, char** argv)
 
     try
     {
-	for (int i = 0; i < 30000; ++i)
+	for (int i = 0; i < 20000; ++i)
 	{
 	    cpu.tick();
 	    ++s_tick;
@@ -176,31 +176,30 @@ int main(int argc, char** argv)
 	// perform an NMI
 	for (int i = 0; i < 100; ++i)
 	{
-	    std::cout << "Simulating NMI #" << i << std::endl;
 	    cpu.nmi();
 	    while (cpu.isInInterrupt())
 	    {
 		cpu.tick();
 		++s_tick;
 	    }
+
+	    ppu.renderVideo();
 	}
     }
     catch (const PPUException& e)
     {
 	std::cerr << "PPU error: " << e.what() << std::endl;
-	std::cerr << "CPU state:" << std::endl;
-	cpu.dumpState(std::cerr);
+	std::cerr << "PC=" << std::hex << cpu.getState().m_PC << std::endl;
 	return 1;
     }
     catch (const lib6502::CpuException& e)
     {
 	std::cerr << "CPU error: " << e.what() << std::endl;
-	cpu.dumpState(std::cerr);
 	return 1;
     }
 
     ppu.dumpNameTables();
-    ppu.renderVideo();
+    //ppu.renderVideo();
 
     bool running = true;
     SDL_Event event;

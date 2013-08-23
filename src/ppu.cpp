@@ -54,21 +54,23 @@ void PPU::write(uint16_t address, uint8_t data)
     {
 	case 0x2000 :
 	    m_ctrl = data;
-	    std::cout << "PPU ctrl: " << std::hex << (int)m_ctrl << std::endl;
 	    break;
 
 	case 0x2001 :
 	    m_mask = data;
-	    std::cout << "PPU mask: " << std::hex << (int)m_mask << std::endl;
 	    break;
 
 	case 0x2003 :
 	    // OAM address
 	    break;
 
+	case 0x2004 :
+	    // OAM data
+	    break;
+
 	case 0x2005 :
 	    // scroll register
-	    std::cout << "PPU scroll: " << (int)data << std::endl;
+	    //std::cout << "PPU scroll: " << (int)data << std::endl;
 	    break;
 
 	case 0x2006 :
@@ -98,18 +100,6 @@ void PPU::dumpNameTables()
 	std::cout << std::setw(2) << std::setfill('0') << (int)m_ram[0x2000 + i] << " ";
     }
     std::cout << std::endl;
-
-#if 0
-    std::cout << "Name table #1: ";
-    for (unsigned i = 0x2400; i < 0x2800; ++i)
-	std::cout << (int)m_ram[i] << " ";
-    std::cout << std::endl;
-#endif
-
-    std::cout << "Background palette: ";
-    for (unsigned i = 0; i < 0x10; ++i)
-	std::cout << (int)m_ram[0x3f00 + i] << " ";
-    std::cout << std::endl;
 }
 
 // =====================================================================================================================
@@ -122,6 +112,20 @@ void PPU::renderVideo()
 	0xf8f8f8, 0x3cbcfc, 0x5c94fc, 0x4088fc, 0xf478fc, 0xfc74b4, 0xfc7460, 0xfc9838, 0xf0bc3c, 0x80d010, 0x4cdc48, 0x58f898, 0x00e8d8, 0x787878, 0x000000, 0x000000,
 	0xffffff, 0xa8e4fc, 0xc4d4fc, 0xd4c8fc, 0xfcc4fc, 0xfcc4d8, 0xfcbcb0, 0xfcd8a8, 0xfce4a0, 0xe0fca0, 0xa8f0bc, 0xb0fccc, 0x9cfcf0, 0xc4c4c4, 0x000000, 0x000000
     };
+
+    uint16_t patternTable = (m_ctrl & 0x10) ? 0x1000 : 0x0000;
+    uint16_t nameTable = 0;
+
+    switch (m_ctrl & 0x3)
+    {
+	case 0x00 : nameTable = 0x2000; break;
+	case 0x01 : nameTable = 0x2400; break;
+	case 0x02 : nameTable = 0x2800; break;
+	case 0x03 : nameTable = 0x2c00; break;
+    }
+
+    //std::cout << "PPU: using pattern table #" << (m_ctrl & 0x10 ? 1 : 0) << " for background rendering" << std::endl;
+    //std::cout << "PPU: base name table: " << std::hex << nameTable << std::endl;
 
     for (unsigned row = 0; row < 30; ++row)
     {
@@ -137,15 +141,15 @@ void PPU::renderVideo()
 	    unsigned colMod = col % 2;
 	    unsigned attrShift = (rowMod * 2 + colMod) * 2 /* 2 bit per block */;
 
-	    uint8_t nameEntry = m_ram[0x2000 /* name table #0 */ + row * 32 + col];
-	    uint8_t attrData = (m_ram[0x2000 + 30 * 32 /* tiles */ + attrByteIndex] >> (6 - attrShift)) & 0x3;
+	    uint8_t nameEntry = m_ram[nameTable + tileIndex];
+	    uint8_t attrData = (m_ram[nameTable + 30 * 32 /* tiles */ + attrByteIndex] >> (6 - attrShift)) & 0x3;
 
 	    //std::cout << "name=" << (int)nameEntry << ", attr=" << (int)attrData << std::endl;
 
 	    for (unsigned tileRow = 0; tileRow < 8; ++tileRow)
 	    {
-		uint8_t layer1 = m_ram[(nameEntry << 4) + tileRow];
-		uint8_t layer2 = m_ram[(nameEntry << 4) + 8 + tileRow];
+		uint8_t layer1 = m_ram[patternTable + (nameEntry << 4) + tileRow];
+		uint8_t layer2 = m_ram[patternTable + (nameEntry << 4) + 8 + tileRow];
 
 		//std::cout << "tileRow=" << std::dec << tileRow << " L1=" << std::hex << (int)layer1 << " Y=" << std::hex << (int)layer2 << std::endl;
 
@@ -197,18 +201,12 @@ uint8_t PPU::readDataRegister()
 void PPU::writeAddressRegister(uint8_t data)
 {
     if (m_firstAddrWrite)
-	m_address = data << 8;
+	m_address = (m_address & 0xff) | (data << 8);
     else
     {
-	m_address |= data;
-	std::cout << "PPU address: " << m_address << std::endl;
-
-	if (m_address >= 0x4000)
-	{
-	    // TODO: mirroring ...
-	    std::cerr << "Invalid PPU address: " << m_address << std::endl;
-	    abort();
-	}
+	m_address = (m_address & 0xff00) | data;
+	m_address &= 0x3fff;
+	//std::cout << "PPU address: " << std::hex << m_address << std::endl;
     }
 
     m_firstAddrWrite = !m_firstAddrWrite;
@@ -217,10 +215,6 @@ void PPU::writeAddressRegister(uint8_t data)
 // =====================================================================================================================
 void PPU::writeDataRegister(uint8_t data)
 {
-    //    if (m_address >= 0x2000 && m_address < 0x23c0)
-    //	std::cerr << "writing name table #0 at " << (int)(m_address - 0x2000) << std::endl;
-        if (m_address >= 0x3f00 && m_address < 0x3f20)
-    	std::cerr << "writing palette data" << std::endl;
     m_ram[m_address] = data;
     incrementAddress();
 }
@@ -229,7 +223,7 @@ void PPU::writeDataRegister(uint8_t data)
 void PPU::incrementAddress()
 {
     if (m_ctrl & 0x04)
-	m_address -= 32;
+	m_address += 32;
     else
 	++m_address;
 }
