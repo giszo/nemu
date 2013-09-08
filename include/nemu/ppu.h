@@ -47,6 +47,8 @@ class PPU : public lib6502::Memory
 	uint16_t m_address;
 	bool m_firstAddrWrite;
 
+	uint8_t m_dataLatch;
+
 	uint8_t* m_ram;
 
 	SDL_Surface* m_screen;

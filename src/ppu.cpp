@@ -15,7 +15,8 @@ PPU::PPU(uint8_t* vrom)
       m_mask(0),
       m_status(0x80),
       m_address(0),
-      m_firstAddrWrite(true)
+      m_firstAddrWrite(true),
+      m_dataLatch(0)
 {
     m_ram = new uint8_t[0x4000];
     memcpy(m_ram, vrom, 8 * 1024);
@@ -192,7 +193,8 @@ uint8_t PPU::readStatusRegister()
 // =====================================================================================================================
 uint8_t PPU::readDataRegister()
 {
-    uint8_t data = m_ram[m_address];
+    uint8_t data = m_dataLatch;
+    m_dataLatch = m_ram[m_address];
     incrementAddress();
     return data;
 }
