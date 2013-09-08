@@ -13,10 +13,15 @@ using lib6502::MakeString;
 PPU::PPU(uint8_t* vrom)
     : m_ctrl(0),
       m_mask(0),
-      m_status(0x80),
+      m_status(0),
       m_address(0),
       m_firstAddrWrite(true),
-      m_dataLatch(0)
+      m_dataLatch(0),
+      m_scrollX(0),
+      m_scrollY(0),
+      m_firstScrollWrite(true),
+      m_tickCounter(0),
+      m_currentScanLine(0)
 {
     m_ram = new uint8_t[0x4000];
     memcpy(m_ram, vrom, 8 * 1024);
@@ -28,6 +33,39 @@ PPU::PPU(uint8_t* vrom)
 PPU::~PPU()
 {
     delete[] m_ram;
+}
+
+// =====================================================================================================================
+void PPU::setNmiCallback(const std::function<void ()>& nmiCallback)
+{
+    m_nmiCallback = nmiCallback;
+}
+
+// =====================================================================================================================
+void PPU::tick()
+{
+    ++m_tickCounter;
+
+    if (m_tickCounter == 341)
+    {
+	renderScanLine(m_currentScanLine);
+
+	++m_currentScanLine;
+	m_tickCounter = 0;
+
+	if (m_currentScanLine == 260)
+	{
+	    finishRendering();
+
+	    m_status |= VBLANK;
+	    m_currentScanLine = 0;
+
+	    if (m_ctrl & 0x80)
+		m_nmiCallback();
+	}
+	else if (m_currentScanLine == 20)
+	    m_status &= ~VBLANK;
+    }
 }
 
 // =====================================================================================================================
@@ -71,7 +109,7 @@ void PPU::write(uint16_t address, uint8_t data)
 
 	case 0x2005 :
 	    // scroll register
-	    //std::cout << "PPU scroll: " << (int)data << std::endl;
+	    writeScrollRegister(data);
 	    break;
 
 	case 0x2006 :
@@ -104,84 +142,6 @@ void PPU::dumpNameTables()
 }
 
 // =====================================================================================================================
-void PPU::renderVideo()
-{
-    static uint32_t palette[64] = {
-	// 1                                                                  8
-	0x747474, 0x24188c, 0x0000a8, 0x44009c, 0x8c0074, 0xa80010, 0xa40000, 0x7c0800, 0x402c00, 0x004400, 0x005000, 0x003c14, 0x183c5c, 0x000000, 0x000000, 0x000000,
-	0xbcbcbc, 0x0070ec, 0x2038ec, 0x8000f0, 0xbc00bc, 0xe40058, 0xd82800, 0xc84c0c, 0x887000, 0x009400, 0x00a800, 0x009038, 0x008088, 0x000000, 0x000000, 0x000000,
-	0xf8f8f8, 0x3cbcfc, 0x5c94fc, 0x4088fc, 0xf478fc, 0xfc74b4, 0xfc7460, 0xfc9838, 0xf0bc3c, 0x80d010, 0x4cdc48, 0x58f898, 0x00e8d8, 0x787878, 0x000000, 0x000000,
-	0xffffff, 0xa8e4fc, 0xc4d4fc, 0xd4c8fc, 0xfcc4fc, 0xfcc4d8, 0xfcbcb0, 0xfcd8a8, 0xfce4a0, 0xe0fca0, 0xa8f0bc, 0xb0fccc, 0x9cfcf0, 0xc4c4c4, 0x000000, 0x000000
-    };
-
-    uint16_t patternTable = (m_ctrl & 0x10) ? 0x1000 : 0x0000;
-    uint16_t nameTable = 0;
-
-    switch (m_ctrl & 0x3)
-    {
-	case 0x00 : nameTable = 0x2000; break;
-	case 0x01 : nameTable = 0x2400; break;
-	case 0x02 : nameTable = 0x2800; break;
-	case 0x03 : nameTable = 0x2c00; break;
-    }
-
-    //std::cout << "PPU: using pattern table #" << (m_ctrl & 0x10 ? 1 : 0) << " for background rendering" << std::endl;
-    //std::cout << "PPU: base name table: " << std::hex << nameTable << std::endl;
-
-    for (unsigned row = 0; row < 30; ++row)
-    {
-	for (unsigned col = 0; col < 32; ++col)
-	{
-	    uint32_t tileIndex = row * 32 + col;
-	    uint16_t attrByteIndex = (row / 4) * 8 + (col / 4);
-
-	    //std::cout << "row=" << row << ", col=" << col << std::endl;
-	    //std::cout << "tile=" << tileIndex << ", attrByte=" << attrByteIndex << std::endl;
-
-	    unsigned rowMod = row % 2;
-	    unsigned colMod = col % 2;
-	    unsigned attrShift = (rowMod * 2 + colMod) * 2 /* 2 bit per block */;
-
-	    uint8_t nameEntry = m_ram[nameTable + tileIndex];
-	    uint8_t attrData = (m_ram[nameTable + 30 * 32 /* tiles */ + attrByteIndex] >> (6 - attrShift)) & 0x3;
-
-	    //std::cout << "name=" << (int)nameEntry << ", attr=" << (int)attrData << std::endl;
-
-	    for (unsigned tileRow = 0; tileRow < 8; ++tileRow)
-	    {
-		uint8_t layer1 = m_ram[patternTable + (nameEntry << 4) + tileRow];
-		uint8_t layer2 = m_ram[patternTable + (nameEntry << 4) + 8 + tileRow];
-
-		//std::cout << "tileRow=" << std::dec << tileRow << " L1=" << std::hex << (int)layer1 << " Y=" << std::hex << (int)layer2 << std::endl;
-
-		for (unsigned tileCol = 0; tileCol < 8; ++tileCol)
-		{
-		    unsigned x = col * 8 + tileCol;
-		    unsigned y = row * 8 + tileRow;
-		    //std::cout << std::dec << "X=" << x << ", Y=" << y << std::endl;
-
-		    uint8_t pixelData = (((layer2 >> (7 - tileCol)) & 1) << 1) | ((layer1 >> (7 - tileCol)) & 1);
-		    uint16_t paletteIndex;
-
-		    if (pixelData != 0)
-			paletteIndex = pixelData | (attrData << 2);
-		    else
-			paletteIndex = 0;
-
-		    uint8_t paletteData = m_palette.read(0x3f00 + paletteIndex) & 0x3f;
-
-		    Uint8* p = (Uint8*)m_screen->pixels + y * m_screen->pitch + x * 4;
-		    uint32_t* pixel = (uint32_t*)p;
-		    *pixel = palette[paletteData];
-		}
-	    }
-	}
-    }
-
-    SDL_Flip(m_screen);
-}
-
-// =====================================================================================================================
 uint8_t PPU::readStatusRegister()
 {
     static unsigned accessCounter = 0;
@@ -191,7 +151,12 @@ uint8_t PPU::readStatusRegister()
     m_firstAddrWrite = true;
 
     // return the current value of the status register
-    return m_status | ((accessCounter % 2) == 0 ? 0x40 : 0x00);
+    uint8_t status = m_status | ((accessCounter % 2) == 0 ? 0x40 : 0x00);
+
+    // clear vblank flag
+    m_status &= ~VBLANK;
+
+    return status;
 }
 
 // =====================================================================================================================
@@ -236,10 +201,91 @@ void PPU::writeDataRegister(uint8_t data)
 }
 
 // =====================================================================================================================
+void PPU::writeScrollRegister(uint8_t data)
+{
+    if (m_firstScrollWrite)
+	m_scrollX = data;
+    else
+	m_scrollY = data;
+
+    m_firstScrollWrite = !m_firstScrollWrite;
+}
+
+// =====================================================================================================================
 void PPU::incrementAddress()
 {
     if (m_ctrl & 0x04)
 	m_address += 32;
     else
 	++m_address;
+}
+
+// =====================================================================================================================
+void PPU::renderScanLine(unsigned _line)
+{
+    if (_line < 20)
+	return;
+
+    unsigned line = _line - 20;
+
+    static uint32_t rgbPalette[64] = {
+	// 1                                                                  8
+	0x747474, 0x24188c, 0x0000a8, 0x44009c, 0x8c0074, 0xa80010, 0xa40000, 0x7c0800, 0x402c00, 0x004400, 0x005000, 0x003c14, 0x183c5c, 0x000000, 0x000000, 0x000000,
+	0xbcbcbc, 0x0070ec, 0x2038ec, 0x8000f0, 0xbc00bc, 0xe40058, 0xd82800, 0xc84c0c, 0x887000, 0x009400, 0x00a800, 0x009038, 0x008088, 0x000000, 0x000000, 0x000000,
+	0xf8f8f8, 0x3cbcfc, 0x5c94fc, 0x4088fc, 0xf478fc, 0xfc74b4, 0xfc7460, 0xfc9838, 0xf0bc3c, 0x80d010, 0x4cdc48, 0x58f898, 0x00e8d8, 0x787878, 0x000000, 0x000000,
+	0xffffff, 0xa8e4fc, 0xc4d4fc, 0xd4c8fc, 0xfcc4fc, 0xfcc4d8, 0xfcbcb0, 0xfcd8a8, 0xfce4a0, 0xe0fca0, 0xa8f0bc, 0xb0fccc, 0x9cfcf0, 0xc4c4c4, 0x000000, 0x000000
+    };
+
+    uint16_t nameTableBase = 0;
+
+    switch (m_ctrl & 0x3)
+    {
+	case 0x00 : nameTableBase = 0x2000; break;
+	case 0x01 : nameTableBase = 0x2400; break;
+	case 0x02 : nameTableBase = 0x2800; break;
+	case 0x03 : nameTableBase = 0x2c00; break;
+    }
+
+    for (unsigned c = 0; c < 256; ++c)
+    {
+	unsigned col = c + m_scrollX;
+
+	unsigned nameTableIdx = (col / 256) % 2;
+	unsigned pixelIdx = col % 256;
+	unsigned tileIdx = (line / 8) * 32 + pixelIdx / 8;
+
+	unsigned attrByteIdx = (line / 32) * 8 + (pixelIdx / 32);
+	unsigned attrRow = (line / 16) % 2;
+	unsigned attrCol = (pixelIdx / 16) % 2;
+	unsigned attrShift = (attrRow * 2 + attrCol) * 2 /* 2 bit per block */;
+
+	uint16_t nameTable = (nameTableBase + (nameTableIdx * 0x400)) & 0x2400; // TODO
+	uint8_t nameTableEntry = m_ram[nameTable + tileIdx];
+	uint8_t attrData = (m_ram[nameTable + 30 * 32 /* tiles */ + attrByteIdx] >> attrShift) & 0x3;
+
+	uint16_t patternTable = 0x1000;
+	uint8_t layer1 = m_ram[patternTable + (nameTableEntry << 4) + line % 8];
+	uint8_t layer2 = m_ram[patternTable + (nameTableEntry << 4) + 8 + (line % 8)];
+
+	unsigned tileCol = pixelIdx % 8;
+	uint8_t pixelData = (((layer2 >> (7 - tileCol)) & 1) << 1) | ((layer1 >> (7 - tileCol)) & 1);
+	uint16_t paletteIndex;
+
+	if (pixelData != 0)
+	    paletteIndex = pixelData | (attrData << 2);
+	else
+	    paletteIndex = 0;
+
+	uint8_t paletteData = m_palette.read(0x3f00 + paletteIndex) & 0x3f;
+
+	Uint8* p = (Uint8*)m_screen->pixels + line * m_screen->pitch + c * 4;
+	uint32_t* pixel = (uint32_t*)p;
+	*pixel = rgbPalette[paletteData];
+    }
+}
+
+// =====================================================================================================================
+void PPU::finishRendering()
+{
+    SDL_Flip(m_screen);
 }

@@ -165,25 +165,16 @@ int main(int argc, char** argv)
     lib6502::Cpu cpu(m);
     //cpu.setInstructionTracer(new CpuTracer());
 
+    ppu.setNmiCallback(std::bind(&lib6502::Cpu::nmi, &cpu));
+
     try
     {
-	for (int i = 0; i < 20000; ++i)
+	while (1)
 	{
+	    ppu.tick();
+	    ppu.tick();
+	    ppu.tick();
 	    cpu.tick();
-	    ++s_tick;
-	}
-
-	// perform an NMI
-	for (int i = 0; i < 100; ++i)
-	{
-	    cpu.nmi();
-	    while (cpu.isInInterrupt())
-	    {
-		cpu.tick();
-		++s_tick;
-	    }
-
-	    ppu.renderVideo();
 	}
     }
     catch (const PPUException& e)
@@ -195,6 +186,7 @@ int main(int argc, char** argv)
     catch (const lib6502::CpuException& e)
     {
 	std::cerr << "CPU error: " << e.what() << std::endl;
+	std::cerr << "PC=" << std::hex << cpu.getState().m_PC << std::endl;
 	return 1;
     }
 

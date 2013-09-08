@@ -8,6 +8,7 @@
 #include <SDL/SDL.h>
 
 #include <stdexcept>
+#include <functional>
 
 class PPUException : public std::runtime_error
 {
@@ -23,12 +24,17 @@ class PPU : public lib6502::Memory
 	PPU(uint8_t* vrom);
 	~PPU();
 
+	void tick();
+
+	void setNmiCallback(const std::function<void()>& nmiCallback);
+
 	uint8_t read(uint16_t address) override;
 	void write(uint16_t address, uint8_t data) override;
 
 	void dumpNameTables();
 
-	void renderVideo();
+	void renderScanLine(unsigned line);
+	void finishRendering();
 
     private:
 	uint8_t readStatusRegister();
@@ -36,6 +42,7 @@ class PPU : public lib6502::Memory
 
 	void writeAddressRegister(uint8_t data);
 	void writeDataRegister(uint8_t data);
+	void writeScrollRegister(uint8_t data);
 
 	void incrementAddress();
 
@@ -54,7 +61,18 @@ class PPU : public lib6502::Memory
 	uint8_t* m_ram;
 	PaletteMemory m_palette;
 
+	uint8_t m_scrollX;
+	uint8_t m_scrollY;
+	bool m_firstScrollWrite;
+
+	unsigned m_tickCounter;
+	unsigned m_currentScanLine;
+
 	SDL_Surface* m_screen;
+
+	std::function<void()> m_nmiCallback;
+
+	static const uint8_t VBLANK = 0x80;
 };
 
 #endif
