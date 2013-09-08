@@ -161,10 +161,14 @@ void PPU::renderVideo()
 		    //std::cout << std::dec << "X=" << x << ", Y=" << y << std::endl;
 
 		    uint8_t pixelData = (((layer2 >> (7 - tileCol)) & 1) << 1) | ((layer1 >> (7 - tileCol)) & 1);
-		    uint16_t paletteIndex = pixelData | (attrData << 2);
-		    //std::cout << "pixelData=" << (int)pixelData << " paletteIndex=" << (int)paletteIndex << std::endl;
+		    uint16_t paletteIndex;
 
-		    uint8_t paletteData = m_ram[0x3f00 + paletteIndex] & 0x3f;
+		    if (pixelData != 0)
+			paletteIndex = pixelData | (attrData << 2);
+		    else
+			paletteIndex = 0;
+
+		    uint8_t paletteData = m_palette.read(0x3f00 + paletteIndex) & 0x3f;
 
 		    Uint8* p = (Uint8*)m_screen->pixels + y * m_screen->pitch + x * 4;
 		    uint32_t* pixel = (uint32_t*)p;
@@ -194,8 +198,14 @@ uint8_t PPU::readStatusRegister()
 uint8_t PPU::readDataRegister()
 {
     uint8_t data = m_dataLatch;
-    m_dataLatch = m_ram[m_address];
+
+    if (PaletteMemory::isPaletteMemory(m_address))
+	m_dataLatch = m_palette.read(m_address);
+    else
+	m_dataLatch = m_ram[m_address];
+
     incrementAddress();
+
     return data;
 }
 
@@ -217,7 +227,11 @@ void PPU::writeAddressRegister(uint8_t data)
 // =====================================================================================================================
 void PPU::writeDataRegister(uint8_t data)
 {
-    m_ram[m_address] = data;
+    if (PaletteMemory::isPaletteMemory(m_address))
+	m_palette.write(m_address, data);
+    else
+	m_ram[m_address] = data;
+
     incrementAddress();
 }
 

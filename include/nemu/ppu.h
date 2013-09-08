@@ -1,6 +1,8 @@
 #ifndef NEMU_PPU_H_INCLUDED
 #define NEMU_PPU_H_INCLUDED
 
+#include "ppu/palette.h"
+
 #include <lib6502/memory.h>
 
 #include <SDL/SDL.h>
@@ -50,6 +52,7 @@ class PPU : public lib6502::Memory
 	uint8_t m_dataLatch;
 
 	uint8_t* m_ram;
+	PaletteMemory m_palette;
 
 	SDL_Surface* m_screen;
 };
