@@ -246,6 +246,8 @@ void PPU::renderScanLine(unsigned _line)
 	case 0x03 : nameTableBase = 0x2c00; break;
     }
 
+    uint32_t* pixel = (uint32_t*)((uint8_t*)m_screen->pixels + line * m_screen->pitch);
+
     for (unsigned c = 0; c < 256; ++c)
     {
 	unsigned col = c + m_scrollX;
@@ -277,10 +279,7 @@ void PPU::renderScanLine(unsigned _line)
 	    paletteIndex = 0;
 
 	uint8_t paletteData = m_palette.read(0x3f00 + paletteIndex) & 0x3f;
-
-	Uint8* p = (Uint8*)m_screen->pixels + line * m_screen->pitch + c * 4;
-	uint32_t* pixel = (uint32_t*)p;
-	*pixel = rgbPalette[paletteData];
+	*pixel++ = rgbPalette[paletteData];
     }
 }
 
