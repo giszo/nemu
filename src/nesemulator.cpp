@@ -1,106 +1,14 @@
 #include <nemu/nesemulator.h>
-
+#include <nemu/loader.h>
 #include <nemu/ppu.h>
+#include <nemu/memory/ram.h>
 
 #include <lib6502/cpu.h>
 
 #include <SDL/SDL.h>
 
-#include <string.h>
-#include <fcntl.h>
-#include <unistd.h>
 #include <iostream>
 #include <iomanip>
-
-// =====================================================================================================================
-struct NesHeader
-{
-	uint8_t signature[4];
-	uint8_t prgRomCount;
-	uint8_t chrRomCount;
-	uint8_t flags6;
-	uint8_t flags7;
-	uint8_t prgRamCount;
-	uint8_t flags9;
-	uint8_t flags10;
-	uint8_t zero[5];
-} __attribute__((packed));
-
-// =====================================================================================================================
-class TestMemory : public lib6502::Memory
-{
-    public:
-	TestMemory(uint8_t* prgData, PPU& ppu)
-	    : m_prgData(prgData),
-	      m_ppu(ppu)
-	{
-	    m_ram = new uint8_t[0x800];
-	    memset(m_ram, 0xff, 0x800);
-	}
-
-	~TestMemory()
-	{
-	    delete[] m_ram;
-	    delete[] m_prgData;
-	}
-
-	uint8_t read(uint16_t address) override
-	{
-	    // ram
-	    if (address >= 0x0000 && address <= 0x1fff)
-		return m_ram[address % 0x800];
-
-	    // prg rom
-	    if (address >= 0x8000 && address <= 0xffff)
-		return m_prgData[address - 0x8000];
-
-	    // PPU
-	    if (address >= 0x2000 && address <= 0x2007)
-		return m_ppu.read(address);
-
-	    if (address == 0x4015 || address == 0x4016 || address == 0x4017)
-		return 0; // ???
-
-	    std::cerr << "Invalid memory read at address: " << std::hex << address << std::endl;
-	    abort();
-
-	    return 0;
-	}
-
-	void write(uint16_t address, uint8_t data) override
-	{
-	    if (address >= 0x0000 && address <= 0x1fff)
-	    {
-		m_ram[address % 0x800] = data;
-		return;
-	    }
-
-	    // PPU
-	    if (address >= 0x2000 && address <= 0x2007)
-	    {
-		m_ppu.write(address, data);
-		return;
-	    }
-
-	    if ((address >= 0x4000 && address <= 0x4013) || (address == 0x4015))
-	    {
-		// TODO: sound ...
-		return;
-	    }
-
-	    if (address == 0x4014 || address == 0x4016 /*???*/ || address == 0x4017 /* extra WTF?! */)
-		return; // some DMA stuff
-
-	    std::cerr << "Invalid memory write at address: " << std::hex << address << std::endl;
-	    abort();
-	}
-
-    private:
-	uint8_t* m_ram;
-	uint8_t* m_prgData;
-
-	PPU& m_ppu;
-};
 
 static uint64_t s_tick = 0;
 
@@ -127,30 +35,6 @@ class CpuTracer : public lib6502::InstructionTracer
 };
 
 // =====================================================================================================================
-static void loadNesFile(char* filename, uint8_t** _rom, uint8_t** _vrom)
-{
-    int f = open(filename, O_RDONLY);
-
-    NesHeader hdr;
-    read(f, &hdr, sizeof(hdr));
-
-    std::cout << "PRG size: " << hdr.prgRomCount * 16384 << " bytes" << std::endl;
-
-    // allocate and read PRG rom contents
-    uint8_t* rom = new uint8_t[32 * 1024];
-    read(f, rom, hdr.prgRomCount * 16384);
-    *_rom = rom;
-
-    std::cout << "VROM size: " << hdr.chrRomCount * 8192 << " bytes" << std::endl;
-
-    uint8_t* vrom = new uint8_t[hdr.chrRomCount * 8192];
-    read(f, vrom, hdr.chrRomCount * 8192);
-    *_vrom = vrom;
-
-    close(f);
-}
-
-// =====================================================================================================================
 NesEmulator::NesEmulator()
     : m_running(true)
 {
@@ -164,25 +48,46 @@ int NesEmulator::run(int argc, char** argv)
 
     SDL_Init(SDL_INIT_EVERYTHING);
 
-    uint8_t* rom;
-    uint8_t* vrom;
-    loadNesFile(argv[1], &rom, &vrom);
+    if (!loadCartridge(argv[1]))
+    {
+	std::cerr << "Unable to load cartridge: " << argv[1] << std::endl;
+	return 1;
+    }
 
-    PPU ppu(vrom);
-    ppu.setNmiCallback(std::bind(&NesEmulator::frameComplete, this));
+    // register 2kB system memory
+    std::shared_ptr<memory::RAM> ram(new memory::RAM(0x800));
+    for (unsigned i = 0; i < 4; ++i)
+	m_memory.registerHandler(i * 0x800, 0x800, ram);
 
-    TestMemory m(rom, ppu);
-    m_cpu.reset(new lib6502::Cpu(m));
-    //cpu.setInstructionTracer(new CpuTracer());
+    m_cpu.reset(new lib6502::Cpu(m_memory));
+
+    // register PPU mappnigs
+    m_memory.registerHandler(0x2000, 8, m_ppu);
+    m_ppu->setNmiCallback(std::bind(&NesEmulator::frameComplete, this));
 
     try
     {
 	while (m_running)
 	{
-	    ppu.tick();
-	    ppu.tick();
-	    ppu.tick();
-	    m_cpu->tick();
+	    m_ppu->tick();
+	    m_ppu->tick();
+	    m_ppu->tick();
+
+	    // TODO: eliminate this try-catch by registering fake APU registers
+	    try
+	    {
+		m_cpu->tick();
+	    }
+	    catch (const memory::Dispatcher::InvalidAddressException& e)
+	    {
+		if (e.getAddress() >= 0x4000 && e.getAddress() <= 0x4019)
+		{ /* this is ok ... */ }
+		else
+		{
+		    std::cerr << "Invalid memory access at $" << std::hex << e.getAddress() << std::endl;
+		    return 1;
+		}
+	    }
 	}
     }
     catch (const PPUException& e)
@@ -201,6 +106,30 @@ int NesEmulator::run(int argc, char** argv)
     SDL_Quit();
 
     return 0;
+}
+
+// =====================================================================================================================
+bool NesEmulator::loadCartridge(const std::string& file)
+{
+    Loader ldr;
+
+    if (!ldr.load(file))
+	return false;
+
+    const auto& rom = ldr.rom();
+
+    std::cout << "Program ROM size: " << rom->size() << " bytes" << std::endl;
+
+    // program ROM
+    m_memory.registerHandler(0x8000, rom->size(), rom);
+
+    if (rom->size() < 32 * 1024)
+	m_memory.registerHandler(0xc000, rom->size(), rom);
+
+    // video ROM
+    m_ppu.reset(new PPU(ldr.vrom()));
+
+    return true;
 }
 
 // =====================================================================================================================

@@ -1,14 +1,15 @@
 #ifndef NEMU_PPU_H_INCLUDED
 #define NEMU_PPU_H_INCLUDED
 
-#include "ppu/palette.h"
-
-#include <lib6502/memory.h>
+#include <nemu/memory/rom.h>
+#include <nemu/memory/dispatcher.h>
+#include <nemu/ppu/palette.h>
 
 #include <SDL/SDL.h>
 
 #include <stdexcept>
 #include <functional>
+#include <memory>
 
 class PPUException : public std::runtime_error
 {
@@ -21,8 +22,19 @@ class PPUException : public std::runtime_error
 class PPU : public lib6502::Memory
 {
     public:
-	PPU(uint8_t* vrom);
-	~PPU();
+	enum
+	{
+	    PPUCTRL,
+	    PPUMASK,
+	    PPUSTATUS,
+	    OAMADDR,
+	    OAMDATA,
+	    PPUSCROLL,
+	    PPUADDR,
+	    PPUDATA
+	};
+
+	PPU(const std::shared_ptr<memory::ROM>& vrom);
 
 	void tick();
 
@@ -30,8 +42,6 @@ class PPU : public lib6502::Memory
 
 	uint8_t read(uint16_t address) override;
 	void write(uint16_t address, uint8_t data) override;
-
-	void dumpNameTables();
 
 	void renderScanLine(unsigned line);
 	void finishRendering();
@@ -58,8 +68,8 @@ class PPU : public lib6502::Memory
 
 	uint8_t m_dataLatch;
 
-	uint8_t* m_ram;
-	PaletteMemory m_palette;
+	//uint8_t* m_ram;
+	std::shared_ptr<PaletteMemory> m_palette;
 
 	uint8_t m_scrollX;
 	uint8_t m_scrollY;
@@ -71,6 +81,8 @@ class PPU : public lib6502::Memory
 	SDL_Surface* m_screen;
 
 	std::function<void()> m_nmiCallback;
+
+	memory::Dispatcher m_memory;
 
 	static const uint8_t VBLANK = 0x80;
 };

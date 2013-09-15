@@ -10,7 +10,7 @@
 using lib6502::MakeString;
 
 // =====================================================================================================================
-PPU::PPU(uint8_t* vrom)
+PPU::PPU(const std::shared_ptr<memory::ROM>& vrom)
     : m_ctrl(0),
       m_mask(0),
       m_status(0),
@@ -23,16 +23,17 @@ PPU::PPU(uint8_t* vrom)
       m_tickCounter(0),
       m_currentScanLine(0)
 {
-    m_ram = new uint8_t[0x4000];
-    memcpy(m_ram, vrom, 8 * 1024);
+    // register video ROM
+    m_memory.registerHandler(0, vrom->size(), vrom);
+
+    // register name table RAM regions
+    for (unsigned i = 0; i < 4; ++i)
+	m_memory.registerHandler(0x2000 + i * 0x400, 0x400, std::make_shared<memory::RAM>(0x400));
+
+    // register palette memory
+    m_memory.registerHandler(0x3f00, 0x20, std::make_shared<PaletteMemory>());
 
     m_screen = SDL_SetVideoMode(256, 240, 32, SDL_SWSURFACE);
-}
-
-// =====================================================================================================================
-PPU::~PPU()
-{
-    delete[] m_ram;
 }
 
 // =====================================================================================================================
@@ -73,11 +74,11 @@ uint8_t PPU::read(uint16_t address)
 {
     switch (address)
     {
-	case 0x2002 :
+	case PPUSTATUS :
 	    // status
 	    return readStatusRegister();
 
-	case 0x2007 :
+	case PPUDATA :
 	    // data register
 	    return readDataRegister();
 
@@ -91,54 +92,35 @@ void PPU::write(uint16_t address, uint8_t data)
 {
     switch (address)
     {
-	case 0x2000 :
+	case PPUCTRL :
 	    m_ctrl = data;
 	    break;
 
-	case 0x2001 :
+	case PPUMASK :
 	    m_mask = data;
 	    break;
 
-	case 0x2003 :
-	    // OAM address
+	case OAMADDR :
 	    break;
 
-	case 0x2004 :
-	    // OAM data
+	case OAMDATA :
 	    break;
 
-	case 0x2005 :
-	    // scroll register
+	case PPUSCROLL :
 	    writeScrollRegister(data);
 	    break;
 
-	case 0x2006 :
-	    // address register
+	case PPUADDR :
 	    writeAddressRegister(data);
 	    break;
 
-	case 0x2007 :
-	    // data register
+	case PPUDATA :
 	    writeDataRegister(data);
 	    break;
 
 	default :
 	    throw PPUException(MakeString() << "invalid register write: " << std::hex << address);
     }
-}
-
-// =====================================================================================================================
-void PPU::dumpNameTables()
-{
-    std::cout << "Name table #0: " << std::endl;
-    std::cout << std::hex;
-    for (unsigned i = 0; i < 32 * 30; ++i)
-    {
-	if (i > 0 && (i % 32) == 0)
-	    std::cout << std::endl;
-	std::cout << std::setw(2) << std::setfill('0') << (int)m_ram[0x2000 + i] << " ";
-    }
-    std::cout << std::endl;
 }
 
 // =====================================================================================================================
@@ -163,11 +145,7 @@ uint8_t PPU::readStatusRegister()
 uint8_t PPU::readDataRegister()
 {
     uint8_t data = m_dataLatch;
-
-    if (PaletteMemory::isPaletteMemory(m_address))
-	m_dataLatch = m_palette.read(m_address);
-    else
-	m_dataLatch = m_ram[m_address];
+    m_dataLatch = m_memory.read(m_address);
 
     incrementAddress();
 
@@ -192,10 +170,7 @@ void PPU::writeAddressRegister(uint8_t data)
 // =====================================================================================================================
 void PPU::writeDataRegister(uint8_t data)
 {
-    if (PaletteMemory::isPaletteMemory(m_address))
-	m_palette.write(m_address, data);
-    else
-	m_ram[m_address] = data;
+    m_memory.write(m_address, data);
 
     incrementAddress();
 }
@@ -262,12 +237,12 @@ void PPU::renderScanLine(unsigned _line)
 	unsigned attrShift = (attrRow * 2 + attrCol) * 2 /* 2 bit per block */;
 
 	uint16_t nameTable = (nameTableBase + (nameTableIdx * 0x400)) & 0x2400; // TODO
-	uint8_t nameTableEntry = m_ram[nameTable + tileIdx];
-	uint8_t attrData = (m_ram[nameTable + 30 * 32 /* tiles */ + attrByteIdx] >> attrShift) & 0x3;
+	uint8_t nameTableEntry = m_memory.read(nameTable + tileIdx);
+	uint8_t attrData = (m_memory.read(nameTable + 30 * 32 /* tiles */ + attrByteIdx) >> attrShift) & 0x3;
 
 	uint16_t patternTable = 0x1000;
-	uint8_t layer1 = m_ram[patternTable + (nameTableEntry << 4) + line % 8];
-	uint8_t layer2 = m_ram[patternTable + (nameTableEntry << 4) + 8 + (line % 8)];
+	uint8_t layer1 = m_memory.read(patternTable + (nameTableEntry << 4) + line % 8);
+	uint8_t layer2 = m_memory.read(patternTable + (nameTableEntry << 4) + 8 + (line % 8));
 
 	unsigned tileCol = pixelIdx % 8;
 	uint8_t pixelData = (((layer2 >> (7 - tileCol)) & 1) << 1) | ((layer1 >> (7 - tileCol)) & 1);
@@ -278,7 +253,7 @@ void PPU::renderScanLine(unsigned _line)
 	else
 	    paletteIndex = 0;
 
-	uint8_t paletteData = m_palette.read(0x3f00 + paletteIndex) & 0x3f;
+	uint8_t paletteData = m_memory.read(0x3f00 + paletteIndex) & 0x3f;
 	*pixel++ = rgbPalette[paletteData];
     }
 }
