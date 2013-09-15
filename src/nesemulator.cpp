@@ -223,8 +223,8 @@ void NesEmulator::frameComplete()
 
     if (!m_lastFrameEnd.is_not_a_date_time())
     {
-	double fps = 1000.0f / (now - m_lastFrameEnd).total_milliseconds();
-	std::cout << "FPS: " << fps << "\r";
+	double fps = 1000000.0f / (now - m_lastFrameEnd).total_microseconds();
+	std::cout << "FPS: " << fps << "          \r";
     }
 
     m_lastFrameEnd = now;
