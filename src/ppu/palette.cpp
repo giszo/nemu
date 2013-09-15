@@ -25,7 +25,6 @@ static inline uint16_t translateAddress(uint16_t address)
 // =====================================================================================================================
 uint8_t PaletteMemory::read(uint16_t address)
 {
-    assert(address < size());
     address = translateAddress(address);
     return RAM::read(address);
 }
@@ -33,7 +32,6 @@ uint8_t PaletteMemory::read(uint16_t address)
 // =====================================================================================================================
 void PaletteMemory::write(uint16_t address, uint8_t data)
 {
-    assert(address < size());
     address = translateAddress(address);
     RAM::write(address, data);
 }

@@ -28,10 +28,14 @@ PPU::PPU(const std::shared_ptr<memory::ROM>& vrom)
 
     // register name table RAM regions
     for (unsigned i = 0; i < 4; ++i)
-	m_memory.registerHandler(0x2000 + i * 0x400, 0x400, std::make_shared<memory::RAM>(0x400));
+    {
+	m_nameTables[i] = std::make_shared<memory::RAM>(0x400);
+	m_memory.registerHandler(0x2000 + i * 0x400, 0x400, m_nameTables[i]);
+    }
 
     // register palette memory
-    m_memory.registerHandler(0x3f00, 0x20, std::make_shared<PaletteMemory>());
+    m_palette = std::make_shared<PaletteMemory>();
+    m_memory.registerHandler(0x3f00, 0x20, m_palette);
 
     m_screen = SDL_SetVideoMode(256, 240, 32, SDL_SWSURFACE);
 }
@@ -211,16 +215,6 @@ void PPU::renderScanLine(unsigned _line)
 	0xffffff, 0xa8e4fc, 0xc4d4fc, 0xd4c8fc, 0xfcc4fc, 0xfcc4d8, 0xfcbcb0, 0xfcd8a8, 0xfce4a0, 0xe0fca0, 0xa8f0bc, 0xb0fccc, 0x9cfcf0, 0xc4c4c4, 0x000000, 0x000000
     };
 
-    uint16_t nameTableBase = 0;
-
-    switch (m_ctrl & 0x3)
-    {
-	case 0x00 : nameTableBase = 0x2000; break;
-	case 0x01 : nameTableBase = 0x2400; break;
-	case 0x02 : nameTableBase = 0x2800; break;
-	case 0x03 : nameTableBase = 0x2c00; break;
-    }
-
     uint32_t* pixel = (uint32_t*)((uint8_t*)m_screen->pixels + line * m_screen->pitch);
 
     for (unsigned c = 0; c < 256; ++c)
@@ -236,9 +230,9 @@ void PPU::renderScanLine(unsigned _line)
 	unsigned attrCol = (pixelIdx / 16) % 2;
 	unsigned attrShift = (attrRow * 2 + attrCol) * 2 /* 2 bit per block */;
 
-	uint16_t nameTable = (nameTableBase + (nameTableIdx * 0x400)) & 0x2400; // TODO
-	uint8_t nameTableEntry = m_memory.read(nameTable + tileIdx);
-	uint8_t attrData = (m_memory.read(nameTable + 30 * 32 /* tiles */ + attrByteIdx) >> attrShift) & 0x3;
+	unsigned nameTable = ((m_ctrl & 0x3) + nameTableIdx) % 2;
+	uint8_t nameTableEntry = m_nameTables[nameTable]->read(tileIdx);
+	uint8_t attrData = (m_nameTables[nameTable]->read(30 * 32 /* tiles */ + attrByteIdx) >> attrShift) & 0x3;
 
 	uint16_t patternTable = 0x1000;
 	uint8_t layer1 = m_memory.read(patternTable + (nameTableEntry << 4) + line % 8);
@@ -253,7 +247,7 @@ void PPU::renderScanLine(unsigned _line)
 	else
 	    paletteIndex = 0;
 
-	uint8_t paletteData = m_memory.read(0x3f00 + paletteIndex) & 0x3f;
+	uint8_t paletteData = m_palette->read(paletteIndex) & 0x3f;
 	*pixel++ = rgbPalette[paletteData];
     }
 }

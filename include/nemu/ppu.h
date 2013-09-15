@@ -68,9 +68,6 @@ class PPU : public lib6502::Memory
 
 	uint8_t m_dataLatch;
 
-	//uint8_t* m_ram;
-	std::shared_ptr<PaletteMemory> m_palette;
-
 	uint8_t m_scrollX;
 	uint8_t m_scrollY;
 	bool m_firstScrollWrite;
@@ -83,6 +80,8 @@ class PPU : public lib6502::Memory
 	std::function<void()> m_nmiCallback;
 
 	memory::Dispatcher m_memory;
+	std::shared_ptr<memory::RAM> m_nameTables[4];
+	std::shared_ptr<PaletteMemory> m_palette;
 
 	static const uint8_t VBLANK = 0x80;
 };
