@@ -38,12 +38,15 @@ class PPU : public lib6502::Memory
 
 	void tick();
 
+	const std::shared_ptr<memory::RAM>& spriteRam() const;
+
 	void setNmiCallback(const std::function<void()>& nmiCallback);
 
 	uint8_t read(uint16_t address) override;
 	void write(uint16_t address, uint8_t data) override;
 
 	void renderScanLine(unsigned line);
+	void renderSprites();
 	void finishRendering();
 
     private:
@@ -82,8 +85,11 @@ class PPU : public lib6502::Memory
 	memory::Dispatcher m_memory;
 	std::shared_ptr<memory::RAM> m_nameTables[4];
 	std::shared_ptr<PaletteMemory> m_palette;
+	std::shared_ptr<memory::RAM> m_sprite;
 
 	static const uint8_t VBLANK = 0x80;
+
+	static uint32_t s_rgbPalette[64];
 };
 
 #endif

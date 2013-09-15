@@ -35,6 +35,31 @@ class CpuTracer : public lib6502::InstructionTracer
 };
 
 // =====================================================================================================================
+class SpriteDMA : public lib6502::Memory
+{
+    public:
+	SpriteDMA(memory::Dispatcher& memory, lib6502::Memory& spriteRam)
+	    : m_memory(memory),
+	      m_spriteRam(spriteRam)
+	{}
+
+	uint8_t read(uint16_t address) override
+	{ abort(); }
+
+	void write(uint16_t address, uint8_t data) override
+	{
+	    uint16_t base = data * 0x100;
+
+	    for (unsigned i = 0; i < 64 * 4; ++i)
+		m_spriteRam.write(i, m_memory.read(base + i));
+	}
+
+    private:
+	memory::Dispatcher& m_memory;
+	lib6502::Memory& m_spriteRam;
+};
+
+// =====================================================================================================================
 NesEmulator::NesEmulator()
     : m_running(true)
 {
@@ -64,6 +89,9 @@ int NesEmulator::run(int argc, char** argv)
     // register PPU mappnigs
     m_memory.registerHandler(0x2000, 8, m_ppu);
     m_ppu->setNmiCallback(std::bind(&NesEmulator::frameComplete, this));
+
+    // register sprite DMA engine
+    m_memory.registerHandler(0x4014, 1, std::make_shared<SpriteDMA>(m_memory, *m_ppu->spriteRam()));
 
     // register APU registers
     m_memory.registerHandler(0x4011, 1, std::make_shared<memory::RAM>(1));
