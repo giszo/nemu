@@ -278,6 +278,12 @@ void PPU::renderSprites()
 	if (x >= 256 || y >= 240)
 	    continue;
 
+	unsigned visX = 256 - x;
+	unsigned visY = 240 - y;
+
+	if (visX == 0 || visY == 0)
+	    continue;
+
 	uint8_t idx = m_sprite->read(i * 4 + 1);
 	uint8_t attr = m_sprite->read(i * 4 + 2);
 	bool flipHoriz = attr & 0x40;
@@ -285,7 +291,7 @@ void PPU::renderSprites()
 
 	uint16_t patternTable = (m_ctrl & 0x8) ? 0x1000 : 0x000;
 
-	for (unsigned row = 0; row < 8; ++row)
+	for (unsigned row = 0; row < std::min(visY, 8u); ++row)
 	{
 	    uint8_t layer1;
 	    uint8_t layer2;
@@ -303,7 +309,7 @@ void PPU::renderSprites()
 
 	    uint32_t* pixel = (uint32_t*)((uint8_t*)m_screen->pixels + (y + row) * m_screen->pitch + (x * 4));
 
-	    for (unsigned col = 0; col < 8; ++col)
+	    for (unsigned col = 0; col < std::min(visX, 8u); ++col)
 	    {
 		uint8_t pixelData;
 
