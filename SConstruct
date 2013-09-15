@@ -4,6 +4,7 @@ sources = [
     "main.cpp",
     "loader.cpp",
     "ppu.cpp",
+    "gamepad.cpp",
     "ppu/palette.cpp",
     "nesemulator.cpp",
     "memory/dispatcher.cpp",

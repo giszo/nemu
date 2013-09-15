@@ -90,14 +90,16 @@ int NesEmulator::run(int argc, char** argv)
     m_memory.registerHandler(0x2000, 8, m_ppu);
     m_ppu->setNmiCallback(std::bind(&NesEmulator::frameComplete, this));
 
+    // register gamepad
+    m_gamepad.reset(new GamePad());
+    m_memory.registerHandler(0x4016, 2, m_gamepad);
+
     // register sprite DMA engine
     m_memory.registerHandler(0x4014, 1, std::make_shared<SpriteDMA>(m_memory, *m_ppu->spriteRam()));
 
     // register APU registers
-    m_memory.registerHandler(0x4011, 1, std::make_shared<memory::RAM>(1));
-    m_memory.registerHandler(0x4015, 1, std::make_shared<memory::RAM>(1));
-    m_memory.registerHandler(0x4016, 1, std::make_shared<memory::RAM>(1));
-    m_memory.registerHandler(0x4017, 1, std::make_shared<memory::RAM>(1));
+    m_memory.registerHandler(0x4000, 0x14, std::make_shared<memory::RAM>(0x14));
+    m_memory.registerHandler(0x4015, 0x1, std::make_shared<memory::RAM>(0x1));
 
     try
     {
@@ -158,25 +160,28 @@ bool NesEmulator::loadCartridge(const std::string& file)
 // =====================================================================================================================
 void NesEmulator::frameComplete()
 {
-    SDL_Event event;
+    // give the gamepad a chance to handle user interaction
+    m_gamepad->pollEvents();
 
     // generate an NMI at the end of a PPU frame
     m_cpu->nmi();
-
-    // handle SDL events
-    while (SDL_PollEvent(&event))
-    {
-	if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE)
-	    m_running = false;
-    }
 
     // calculate FPS
     boost::posix_time::ptime now = boost::posix_time::microsec_clock::universal_time();
 
     if (!m_lastFrameEnd.is_not_a_date_time())
     {
-	double fps = 1000000.0f / (now - m_lastFrameEnd).total_microseconds();
-	std::cout << "FPS: " << fps << "          \r";
+	uint64_t frameTime = (now - m_lastFrameEnd).total_microseconds();
+	uint64_t desiredFrameTime = 1000000 / 45;
+
+	//double fps = 1000000.0f / frameTime;
+	//std::cout << "FPS: " << fps << "          \r";
+
+	if (frameTime <= desiredFrameTime)
+	{
+	    timespec t = {0, (desiredFrameTime - frameTime) * 1000};
+	    nanosleep(&t, NULL);
+	}
     }
 
     m_lastFrameEnd = now;

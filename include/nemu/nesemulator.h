@@ -2,6 +2,7 @@
 #define NEMU_NESEMULATOR_H_INCLUDED
 
 #include <nemu/ppu.h>
+#include <nemu/gamepad.h>
 #include <nemu/memory/dispatcher.h>
 
 #include <lib6502/cpu.h>
@@ -30,6 +31,7 @@ class NesEmulator
 	memory::Dispatcher m_memory;
 
 	std::shared_ptr<PPU> m_ppu;
+	std::shared_ptr<GamePad> m_gamepad;
 
 	boost::posix_time::ptime m_lastFrameEnd;
 };
