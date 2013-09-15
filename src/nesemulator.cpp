@@ -65,6 +65,12 @@ int NesEmulator::run(int argc, char** argv)
     m_memory.registerHandler(0x2000, 8, m_ppu);
     m_ppu->setNmiCallback(std::bind(&NesEmulator::frameComplete, this));
 
+    // register APU registers
+    m_memory.registerHandler(0x4011, 1, std::make_shared<memory::RAM>(1));
+    m_memory.registerHandler(0x4015, 1, std::make_shared<memory::RAM>(1));
+    m_memory.registerHandler(0x4016, 1, std::make_shared<memory::RAM>(1));
+    m_memory.registerHandler(0x4017, 1, std::make_shared<memory::RAM>(1));
+
     try
     {
 	while (m_running)
@@ -72,23 +78,12 @@ int NesEmulator::run(int argc, char** argv)
 	    m_ppu->tick();
 	    m_ppu->tick();
 	    m_ppu->tick();
-
-	    // TODO: eliminate this try-catch by registering fake APU registers
-	    try
-	    {
-		m_cpu->tick();
-	    }
-	    catch (const memory::Dispatcher::InvalidAddressException& e)
-	    {
-		if (e.getAddress() >= 0x4000 && e.getAddress() <= 0x4019)
-		{ /* this is ok ... */ }
-		else
-		{
-		    std::cerr << "Invalid memory access at $" << std::hex << e.getAddress() << std::endl;
-		    return 1;
-		}
-	    }
+	    m_cpu->tick();
 	}
+    }
+    catch (const memory::Dispatcher::InvalidAddressException& e)
+    {
+	std::cerr << "Invalid memory access at $" << std::hex << e.getAddress() << std::endl;
     }
     catch (const PPUException& e)
     {
