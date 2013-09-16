@@ -28,7 +28,6 @@ PPU::PPU(const std::shared_ptr<memory::ROM>& vrom)
       m_dataLatch(0),
       m_scrollX(0),
       m_scrollY(0),
-      m_firstScrollWrite(true),
       m_tickCounter(0),
       m_currentScanLine(0)
 {
@@ -66,16 +65,18 @@ void PPU::tick()
     if (m_tickCounter == 341)
     {
 	renderScanLine(m_currentScanLine);
+	renderSpriteLine(m_currentScanLine);
 
 	++m_currentScanLine;
 	m_tickCounter = 0;
 
 	if (m_currentScanLine == 260)
 	{
-	    renderSprites();
 	    finishRendering();
 
 	    m_status |= VBLANK;
+	    m_status &= ~SPRITE0_HIT;
+
 	    m_currentScanLine = 0;
 
 	    if (m_ctrl & 0x80)
@@ -117,6 +118,10 @@ void PPU::write(uint16_t address, uint8_t data)
     {
 	case PPUCTRL :
 	    m_ctrl = data;
+
+	    // TODO: for now only 8x8 sprites are supported
+	    assert((m_ctrl & 0x20) == 0);
+
 	    break;
 
 	case PPUMASK :
@@ -156,7 +161,7 @@ uint8_t PPU::readStatusRegister()
     m_firstAddrWrite = true;
 
     // return the current value of the status register
-    uint8_t status = m_status | ((accessCounter % 2) == 0 ? 0x40 : 0x00);
+    uint8_t status = m_status | (accessCounter % 2 == 0 ? 0x40 : 0);
 
     // clear vblank flag
     m_status &= ~VBLANK;
@@ -201,12 +206,12 @@ void PPU::writeDataRegister(uint8_t data)
 // =====================================================================================================================
 void PPU::writeScrollRegister(uint8_t data)
 {
-    if (m_firstScrollWrite)
+    if (m_firstAddrWrite)
 	m_scrollX = data;
     else
 	m_scrollY = data;
 
-    m_firstScrollWrite = !m_firstScrollWrite;
+    m_firstAddrWrite = !m_firstAddrWrite;
 }
 
 // =====================================================================================================================
@@ -226,7 +231,7 @@ void PPU::renderScanLine(unsigned _line)
 
     unsigned line = _line - 20;
 
-    uint32_t* pixel = (uint32_t*)((uint8_t*)m_screen->pixels + line * m_screen->pitch);
+    unsigned* data = m_scanLineData;
 
     for (unsigned c = 0; c < 256; ++c)
     {
@@ -251,38 +256,41 @@ void PPU::renderScanLine(unsigned _line)
 
 	unsigned tileCol = pixelIdx % 8;
 	uint8_t pixelData = (((layer2 >> (7 - tileCol)) & 1) << 1) | ((layer1 >> (7 - tileCol)) & 1);
-	uint16_t paletteIndex;
 
 	if (pixelData != 0)
-	    paletteIndex = pixelData | (attrData << 2);
+	    *data = pixelData | (attrData << 2);
 	else
-	    paletteIndex = 0;
+	    *data = 0;
 
-	uint8_t paletteData = m_palette->read(paletteIndex) & 0x3f;
-	*pixel++ = s_rgbPalette[paletteData];
+	++data;
     }
+
+    data = m_scanLineData;
+    uint32_t* pixel = (uint32_t*)((uint8_t*)m_screen->pixels + line * m_screen->pitch);
+
+    for (unsigned c = 0; c < 256; ++c)
+	*pixel++ = s_rgbPalette[m_palette->read(*data++ & 0x3f)];
 }
 
-
 // =====================================================================================================================
-void PPU::renderSprites()
+void PPU::renderSpriteLine(unsigned _line)
 {
-    // TODO: for now only 8x8 sprites are supported
-    assert((m_ctrl & 0x20) == 0);
+    if (_line < 20)
+	return;
+
+    unsigned line = _line - 20;
 
     for (unsigned i = 0; i < 64; ++i)
     {
-	uint8_t x = m_sprite->read(i * 4 + 3);
 	uint8_t y = m_sprite->read(i * 4 + 0);
 
-	if (x >= 256 || y >= 240)
+	// skip this one if it is not visible in this line
+	if (line < y || line >= (y + 8u))
 	    continue;
+
+	uint8_t x = m_sprite->read(i * 4 + 3);
 
 	unsigned visX = 256 - x;
-	unsigned visY = 240 - y;
-
-	if (visX == 0 || visY == 0)
-	    continue;
 
 	uint8_t idx = m_sprite->read(i * 4 + 1);
 	uint8_t attr = m_sprite->read(i * 4 + 2);
@@ -291,42 +299,45 @@ void PPU::renderSprites()
 
 	uint16_t patternTable = (m_ctrl & 0x8) ? 0x1000 : 0x000;
 
-	for (unsigned row = 0; row < std::min(visY, 8u); ++row)
+	// find out which row of the sprite we are rendering actually
+	unsigned row = line - y;
+
+	uint8_t layer1;
+	uint8_t layer2;
+
+	if (flipVert)
 	{
-	    uint8_t layer1;
-	    uint8_t layer2;
+	    layer1 = m_memory.read(patternTable + idx * 16 + (7 - row));
+	    layer2 = m_memory.read(patternTable + idx * 16 + 8 + (7 - row));
+	}
+	else
+	{
+	    layer1 = m_memory.read(patternTable + idx * 16 + row);
+	    layer2 = m_memory.read(patternTable + idx * 16 + 8 + row);
+	}
 
-	    if (flipVert)
-	    {
-		layer1 = m_memory.read(patternTable + idx * 16 + (7 - row));
-		layer2 = m_memory.read(patternTable + idx * 16 + 8 + (7 - row));
-	    }
+	uint32_t* pixel = (uint32_t*)((uint8_t*)m_screen->pixels + line * m_screen->pitch + (x * 4));
+
+	for (unsigned col = 0; col < std::min(visX, 8u); ++col)
+	{
+	    uint8_t pixelData;
+
+	    if (flipHoriz)
+		pixelData = (((layer2 >> col) & 1) << 1) | ((layer1 >> col) & 1);
 	    else
+		pixelData = (((layer2 >> (7 - col)) & 1) << 1) | ((layer1 >> (7 - col)) & 1);
+
+	    if (pixelData != 0)
 	    {
-		layer1 = m_memory.read(patternTable + idx * 16 + row);
-		layer2 = m_memory.read(patternTable + idx * 16 + 8 + row);
+		//if (i == 0 && m_scanLineData[x + col] != 0)
+		//    m_status |= SPRITE0_HIT;
+
+		uint8_t attrData = attr & 0x3;
+		uint8_t paletteData = m_palette->read(0x10 | (attrData << 2) | pixelData);
+		*pixel = s_rgbPalette[paletteData];
 	    }
 
-	    uint32_t* pixel = (uint32_t*)((uint8_t*)m_screen->pixels + (y + row) * m_screen->pitch + (x * 4));
-
-	    for (unsigned col = 0; col < std::min(visX, 8u); ++col)
-	    {
-		uint8_t pixelData;
-
-		if (flipHoriz)
-		    pixelData = (((layer2 >> col) & 1) << 1) | ((layer1 >> col) & 1);
-		else
-		    pixelData = (((layer2 >> (7 - col)) & 1) << 1) | ((layer1 >> (7 - col)) & 1);
-
-		if (pixelData != 0)
-		{
-		    uint8_t attrData = attr & 0x3;
-		    uint8_t paletteData = m_palette->read(0x10 + attrData * 4 + pixelData);
-		    *pixel = s_rgbPalette[paletteData];
-		}
-
-		++pixel;
-	    }
+	    ++pixel;
 	}
     }
 }

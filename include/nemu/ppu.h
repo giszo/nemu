@@ -34,6 +34,13 @@ class PPU : public lib6502::Memory
 	    PPUDATA
 	};
 
+	// status register bits
+	enum
+	{
+	    SPRITE0_HIT = 0x40,
+	    VBLANK = 0x80
+	};
+
 	PPU(const std::shared_ptr<memory::ROM>& vrom);
 
 	void tick();
@@ -46,7 +53,7 @@ class PPU : public lib6502::Memory
 	void write(uint16_t address, uint8_t data) override;
 
 	void renderScanLine(unsigned line);
-	void renderSprites();
+	void renderSpriteLine(unsigned line);
 	void finishRendering();
 
     private:
@@ -73,7 +80,6 @@ class PPU : public lib6502::Memory
 
 	uint8_t m_scrollX;
 	uint8_t m_scrollY;
-	bool m_firstScrollWrite;
 
 	unsigned m_tickCounter;
 	unsigned m_currentScanLine;
@@ -87,7 +93,7 @@ class PPU : public lib6502::Memory
 	std::shared_ptr<PaletteMemory> m_palette;
 	std::shared_ptr<memory::RAM> m_sprite;
 
-	static const uint8_t VBLANK = 0x80;
+	unsigned m_scanLineData[256];
 
 	static uint32_t s_rgbPalette[64];
 };
